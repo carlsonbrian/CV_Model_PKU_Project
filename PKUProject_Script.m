@@ -1,49 +1,184 @@
+% ***********************************************************************************
+%            P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
+%
+%   This script loads data for a given patient and then simulates a cardiovacular
+%   systems model which can be hand tuned to match the data
+%
+%   Model originally created on     10 January 2023
+%   Model last modfied on           10 January 2023
+%
+%   Based on the code by   Ben Randall
+%                          Salla Kim
+%                          Andrew Meyer
+%                          Dan Beard
+%   Heart model from       Joost Lumens et al.
+%   Implemented by         Brian Carlson
+%                          Physiological Systems Dynamics Laboratory
+%                          Department of Molecular and Integrative Physiology
+%                          University of Michigan
+%  
+% ***********************************************************************************
+%  START OF  	      P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
+
+tic
+
+%% **********************************************************************************
+%  INPUT DATA FOR  	  P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
+    
+    % Patient general data
+    DataSrc = "PKU";                                % Where data is from
+    PID = 1;                                        % Study patient number
+    Hgt = 171.8;                                    % Not given (Ave chinese male,cm)
+    Wgt = 77.7;                                     % Not given (Ave chinese male,kg)
+    Sex = 1;                                        % 1 = Male and 2 = Female
+    % Right heart cath data
+    HR_RHCRest = 54;                                % Heart rate rest RHC (beats/min)
+    CO_RHCRest = 6.7;                               % Cardiac output rest RHC (L/min)
+    P_SAdiast_RHCRest = 80;                         % Not given, SPbar (mmHg)
+    P_SAsyst_RHCRest = 120;                         % Not given, DPbar (mmHg)
+    % Transthoracic echo data
+    LV_EDD_EchoRest = 48.2;                         % Use Teich Eqn, EDV_LV (mm)
+    LV_ESD_EchoRest = 28.3;                         % Use Teich Eqn, ESV_LV (mm)
+    V_LVdiast_EchoRest = -1;                        % Not given, MOD LV V diast (mL)
+    V_LVsyst_EchoRest = -1;                         % Not given, MOD LV V syst (mL)
+    % If the LV volume is not calculated with 2D Simpson's method
+    %  then use Teichholz formula with the 1D top of the ventricle
+    %  diameter to estimate LV volume in systole and diastole
+    if (V_LVsyst_EchoRest == -1)
+        % Calculate the LV systolic volume using the Teichholz expression
+        V_LVsyst_EchoRest = ((LV_EDD_EchoRest/10)^3) / ...       
+            ((6/pi) * ((0.075 * (LV_EDD_EchoRest/10)) + 0.18));
+        V_LVdiast_EchoRest = ((LV_ESD_EchoRest/10)^3) / ...       
+            ((6/pi) * ((0.075 * (LV_ESD_EchoRest/10)) + 0.18));
+    end
+
+    % Create input data structure to pass to functions
+    InputData_Values = {DataSrc PID Hgt Wgt Sex HR_RHCRest ...
+        CO_RHCRest P_SAdiast_RHCRest P_SAsyst_RHCRest ...
+        V_LVdiast_EchoRest V_LVsyst_EchoRest};
+    InputData_Fields = {'DataSrc' 'PID' 'Hgt' 'Wgt' 'Sex' ...
+        'HR_RHCRest' 'CO_RHCRest' 'P_SAdiast_RHCRest' ...
+        'P_SAsyst_RHCRest' 'V_LVdiast_EchoRest' ...
+        'V_LVsyst_EchoRest'};
+    InputData_Struct = cell2struct(InputData_Values, ...
+        InputData_Fields,2);
+
+    
+%% **********************************************************************************
+%  PARAMETERS FOR     P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
+
+    % Compliance (mL mmHg^(-1))
+    C_SA = 1.875; 
+    C_SV = 45.8333; 
+    C_PA = 7.5; 
+    C_PV = 12.5; 
+    % Resistance (mmHg s mL^(-1))
+    R_SA  = 1.368; 
+    R_tSA = 0.08; 
+    R_PA  = 0.144; 
+    R_tPA = 0.02; 
+    R_m = 0.02; 
+    R_a = 0.0001; 
+    R_t = 0.004; 
+    R_p = 0.0001;  
+    % Pericardium parameters 
+    Vh0 = 312.5; % mL 
+    s   = 10;
+    % Force scaling factors (unitless) 
+    k_pas_LV = 4552.2;
+    k_pas_RV = 5647.3;
+    k_act_LV = 3167.1; 
+    k_act_RV = 7697.5;
+    % Sarcomere length parameters (um)
+    Lsref   = 2;
+    Lsc0    = 1.51; 
+    Lse_iso = 0.04; 
+    % Sarcomere length shortening velocity (um s^(-1))
+    v_max = 3.5; 
+    % Midwall reference surface area (cm^2)
+    Amref_LV  = 102.7282;                           % Midwall reference SA for LV
+    Amref_SEP = 51.3641; 
+    Amref_RV  = 143.2044; 
+    % Midwall volume (mL)
+    Vw_LV  = 82.54; 
+    Vw_SEP = 41.27; 
+    Vw_RV  = 25.7725; 
+    % Passive stress steepness parameter (uls) 
+    gamma = 7.5; 
+    % Activation function parameters
+    k_TS = 0.3;                                     % Frac T to max systole (uls)
+    k_TR = 0.3;                                     % Frac T max syst to basln (uls)
+
+    % Create parameter structure to pass to functions
+    Param_Values = {C_SA C_SV C_PA C_PV R_SA  R_tSA ...
+        R_PA R_tPA R_m R_a R_t R_p Vh0 s k_pas_LV ...
+        k_pas_RV k_act_LV k_act_RV Lsref Lsc0 Lse_iso ...
+        v_max Amref_LV  Amref_SEP Amref_RV Vw_LV ...
+        Vw_SEP Vw_RV gamma k_TS k_TR};
+    Param_Fields = {'C_SA' 'C_SV' 'C_PA' 'C_PV' ...
+        'R_SA'  'R_tSA' 'R_PA' 'R_tPA' 'R_m' 'R_a' ...
+        'R_t' 'R_p' 'Vh0' 's' 'k_pas_LV' 'k_pas_RV' ...
+        'k_act_LV' 'k_act_RV' 'Lsref' 'Lsc0' 'Lse_iso' ...
+        'v_max' 'Amref_LV' 'Amref_SEP' 'Amref_RV' 'Vw_LV' ...
+        'Vw_SEP' 'Vw_RV' 'gamma' 'k_TS' 'k_TR'};
+    Param_Struct = cell2struct(Param_Values, ...
+        Param_Fields,2);
+
+    % Create one single structure of structures to pass
+    AllStruct_Values = {InputData_Struct Param_Struct};
+    AllStruct_Fields = {'InputData_Struct' 'Param_Struct'};
+    AllStruct_Struct = cell2struct(AllStruct_Values, ...
+        AllStruct_Fields,2);
 
 
-   %{ 
+%% **********************************************************************************
+%  ODE SETTINGS FOR   P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
 
-    This SCRIPT solves the time-varying in vivo version of the model to
-    steady-state and then calculates 2 steady-state beats. 
+    % ODE tolerance 
+    ODE_TOL = 1e-08;
 
 
+%% **********************************************************************************
+%  COMPUTED VALS FOR  P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
 
-    %} 
-    %this will be new driver
+    T_RHCRest = 60 / HR_RHCRest;                    % T
+    SV_RHC_Rest = LV_EDD_EchoRest - ...             % Do we need this?, SV
+        LV_ESD_EchoRest; 
+    
+    % Calculate total blood volume
+    % Calculate number of beats/time span
 
-    clear;
+    
     
     % Times (s) and other holdovers from data struct
-    HR = 60;
+%     HR = HR_RHCRest;
     dt = 1e-03;
     tspan = [0:dt:20];  
-    T     = 60 / HR; 
+    T     = 60 / HR_RHCRest; 
     SPbar = 120;
     DPbar = 80;
-    Vtot = 5000;
-    CO_lv = Vtot / 60; %mL/s
+%     Vtot = 5000;
+    CO_lv = (CO_RHCRest * 1000) / 60;               % mL/s
     SV    = CO_lv*T; 
     EDV_LV = 125;
     ESV_LV = EDV_LV - SV;
-
-    
-    % ODE tolerance 
-    ODE_TOL = 1e-08;
-    
-
-
-    %% Parameters 
-    
-    % Compliance 
-    C_SA = 1.875;
 
     % Unstressed volumes (mL) 
     V_SAu = 525;
     V_SVu = 2475; 
     V_PAu = 100; 
-    V_PVu = 900; 
-    
+    V_PVu = 900;
 
-    %% Initial conditions 
+
+%% **********************************************************************************
+%  INIT CONDS FOR     P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
 
     xm_LV_0 = 4.6147;
     xm_SEP_0 = 0.6066;
@@ -81,7 +216,7 @@
         
         % Set options and compute model for time span tspan 
         opts = odeset('Mass',M,'RelTol',ODE_TOL,'AbsTol',ODE_TOL);
-        sol  = ode15s(@PKU_CV_dXdt,tspan,init,opts);
+        sol  = ode15s(@PKU_CV_dXdt,tspan,init,opts,AllStruct_Struct);
        
     
         if sol.x(end) ~= tspan(end) 
@@ -202,7 +337,7 @@
     
     % After determining that the model is in steady-state, solve 2 more beats 
     time = 0:dt:2*T; 
-    sol  = ode15s(@PKU_CV_dXdt,[time(1) time(end)],init,opts);
+    sol  = ode15s(@PKU_CV_dXdt,[time(1) time(end)],init,opts,AllStruct_Struct);
     sols = deval(sol,time);
     sols = sols'; 
     
@@ -210,7 +345,7 @@
     
     o = zeros(37,length(time));  
     for i = 1:length(time) 
-        [~,o(:,i)] = PKU_CV_dXdt(time(i),sols(i,:));
+        [~,o(:,i)] = PKU_CV_dXdt(time(i),sols(i,:),AllStruct_Struct);
     end 
     
     %% Outputs 
