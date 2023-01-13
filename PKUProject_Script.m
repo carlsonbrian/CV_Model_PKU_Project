@@ -33,7 +33,7 @@ tic
     PID = 1;                                        % Study patient number
     Hgt = 171.8;                                    % Not given (Ave chinese male,cm)
     Wgt = 77.7;                                     % Not given (Ave chinese male,kg)
-    Sex = 1;                                        % 1 = Male and 2 = Female
+    Sex = 'M';                                      % Patient sex at birth
     % Right heart cath data
     HR_RHCRest = 54;                                % Heart rate rest RHC (beats/min)
     CO_RHCRest = 6.7;                               % Cardiac output rest RHC (L/min)
@@ -112,19 +112,22 @@ tic
     % Activation function parameters
     k_TS = 0.3;                                     % Frac T to max systole (uls)
     k_TR = 0.3;                                     % Frac T max syst to basln (uls)
+    % Factor to adjust fraction of stressed 
+    %   versus unstressed blood volume
+    SVFact = 1;                                     % Factor at 1 = 30% stresse vol
 
     % Create parameter structure to pass to functions
     Param_Values = {C_SA C_SV C_PA C_PV R_SA  R_tSA ...
         R_PA R_tPA R_m R_a R_t R_p Vh0 s k_pas_LV ...
         k_pas_RV k_act_LV k_act_RV Lsref Lsc0 Lse_iso ...
         v_max Amref_LV  Amref_SEP Amref_RV Vw_LV ...
-        Vw_SEP Vw_RV gamma k_TS k_TR};
+        Vw_SEP Vw_RV gamma k_TS k_TR SVFact};
     Param_Fields = {'C_SA' 'C_SV' 'C_PA' 'C_PV' ...
         'R_SA'  'R_tSA' 'R_PA' 'R_tPA' 'R_m' 'R_a' ...
         'R_t' 'R_p' 'Vh0' 's' 'k_pas_LV' 'k_pas_RV' ...
         'k_act_LV' 'k_act_RV' 'Lsref' 'Lsc0' 'Lse_iso' ...
         'v_max' 'Amref_LV' 'Amref_SEP' 'Amref_RV' 'Vw_LV' ...
-        'Vw_SEP' 'Vw_RV' 'gamma' 'k_TS' 'k_TR'};
+        'Vw_SEP' 'Vw_RV' 'gamma' 'k_TS' 'k_TR' 'SVFact'};
     Param_Struct = cell2struct(Param_Values, ...
         Param_Fields,2);
 
@@ -151,13 +154,28 @@ tic
     SV_RHC_Rest = LV_EDD_EchoRest - ...             % Do we need this?, SV
         LV_ESD_EchoRest; 
     
-    % Calculate total blood volume
+    % Calculate total blood volume based on height, weight and sex.
+    %  This expression is from Nadler et al. Surgery 51:224,1962.
+    if (Sex == 'M')
+        TotBV = ((0.3669 * (Hgt/100)^3) + (0.03219 * Wgt) + 0.6041) * 1000;
+    else
+        TotBV = ((0.3561 * (Hgt/100)^3) + (0.03308 * Wgt) + 0.1833) * 1000;
+    end
+    % The original Smith model only kept track of the stressed blood volume
+    %  and ignores the unstressed volume - in essence it is assuming the unstressed
+    %  volume will only be recruited due to a change in compliance in the
+    %  compartments. Assuming they were simulating a typical 5000 mL total blood
+    %  volume they included only 1500 mL (or 30%) in the circulating volume
+    %  therefore we will multiply our calculated TotBV value by 0.3 to yield 
+    %  circulating blood volume. To account for extra recruited volume in heart
+    %  disease the 30% circulating blood volume can be altered by changing SVFact
+    StressBV = SVFact * 0.30 * TotBV;
+    
     % Calculate number of beats/time span
 
     
     
     % Times (s) and other holdovers from data struct
-%     HR = HR_RHCRest;
     dt = 1e-03;
     tspan = [0:dt:20];  
     T     = 60 / HR_RHCRest; 
@@ -169,35 +187,41 @@ tic
     EDV_LV = 125;
     ESV_LV = EDV_LV - SV;
 
-    % Unstressed volumes (mL) 
-    V_SAu = 525;
-    V_SVu = 2475; 
-    V_PAu = 100; 
-    V_PVu = 900;
+%     % Unstressed volumes (mL) 
+%     V_SAu = 525;
+%     V_SVu = 2475; 
+%     V_PAu = 100; 
+%     V_PVu = 900;
 
 
 %% **********************************************************************************
 %  INIT CONDS FOR     P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
 % ***********************************************************************************
 
+    % Setting the initial conditions for the cardiac geometry
     xm_LV_0 = 4.6147;
     xm_SEP_0 = 0.6066;
     xm_RV_0 = 4.6698;
     ym_0 = 4.0621;
+    % Setting the initial conditions for the sarcomere lengths
     Lsc_LV_0 = 2.0985;
     Lsc_SEP_0 = 1.9903;
     Lsc_RV_0 = 1.7925;
-    V_LV_0 = 125;
-    V_RV_0 = 125;
-    V_SA_0 = 150;
-    V_SV_0 = 45.8333;
-    V_PA_0 = 75; 
-    V_PV_0 = 25;
-    init = [xm_LV_0; xm_SEP_0; xm_RV_0; ym_0;               % 1-4
+    % Setting state variable initial conditions 
+    %  Note: the initial volume division is scaled as a fraction
+    %  of stressed volume according to Beneken Table 1-1 where 
+    %  total blood volume is 4544 mL and stressed/total is 18.75%
+    V_LV_0 = (175/852) * StressBV;                  % Dan/Andrew value 125 mL
+    V_RV_0 = (175/852) * StressBV;                  % Dan/Andrew value 125 mL
+    V_SA_0 = (160/852) * StressBV;                  % Dan/Andrew value 150 mL
+    V_SV_0 = (219/852) * StressBV;                  % Dan/Andrew value 45.83 mL
+    V_PA_0 = (69/852)  * StressBV;                  % Dan/Andrew value 75 mL
+    V_PV_0 = (54/852)  * StressBV;                  % Dan/Andrew value 25 mL
+
+    X0 = [xm_LV_0; xm_SEP_0; xm_RV_0; ym_0;                 % 1-4
         Lsc_LV_0; Lsc_SEP_0; Lsc_RV_0;                      % 5-7
         V_LV_0; V_RV_0; V_SA_0; V_SV_0; V_PA_0; V_PV_0;     % 8-13
         ]; 
-
 
 
     %% Set mass matrix M for DAE 
@@ -216,7 +240,7 @@ tic
         
         % Set options and compute model for time span tspan 
         opts = odeset('Mass',M,'RelTol',ODE_TOL,'AbsTol',ODE_TOL);
-        sol  = ode15s(@PKU_CV_dXdt,tspan,init,opts,AllStruct_Struct);
+        sol  = ode15s(@PKU_CV_dXdt,tspan,X0,opts,AllStruct_Struct);
        
     
         if sol.x(end) ~= tspan(end) 
@@ -579,6 +603,8 @@ tic
     xlabel('Time (s)')
     set(gca,'FontSize',20)
     ylim([0 .5])
+
+    toc
 
 
 
