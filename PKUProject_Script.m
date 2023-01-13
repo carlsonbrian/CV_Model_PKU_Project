@@ -117,43 +117,52 @@ tic
     SVFact = 1;                                     % Factor at 1 = 30% stresse vol
 
     % Create parameter structure to pass to functions
-    Param_Values = {C_SA C_SV C_PA C_PV R_SA  R_tSA ...
+    ModParam_Values = {C_SA C_SV C_PA C_PV R_SA  R_tSA ...
         R_PA R_tPA R_m R_a R_t R_p Vh0 s k_pas_LV ...
         k_pas_RV k_act_LV k_act_RV Lsref Lsc0 Lse_iso ...
         v_max Amref_LV  Amref_SEP Amref_RV Vw_LV ...
         Vw_SEP Vw_RV gamma k_TS k_TR SVFact};
-    Param_Fields = {'C_SA' 'C_SV' 'C_PA' 'C_PV' ...
+    ModParam_Fields = {'C_SA' 'C_SV' 'C_PA' 'C_PV' ...
         'R_SA'  'R_tSA' 'R_PA' 'R_tPA' 'R_m' 'R_a' ...
         'R_t' 'R_p' 'Vh0' 's' 'k_pas_LV' 'k_pas_RV' ...
         'k_act_LV' 'k_act_RV' 'Lsref' 'Lsc0' 'Lse_iso' ...
         'v_max' 'Amref_LV' 'Amref_SEP' 'Amref_RV' 'Vw_LV' ...
         'Vw_SEP' 'Vw_RV' 'gamma' 'k_TS' 'k_TR' 'SVFact'};
-    Param_Struct = cell2struct(Param_Values, ...
-        Param_Fields,2);
-
-    % Create one single structure of structures to pass
-    AllStruct_Values = {InputData_Struct Param_Struct};
-    AllStruct_Fields = {'InputData_Struct' 'Param_Struct'};
-    AllStruct_Struct = cell2struct(AllStruct_Values, ...
-        AllStruct_Fields,2);
-
+    ModParam_Struct = cell2struct(ModParam_Values, ...
+        ModParam_Fields,2);
 
 %% **********************************************************************************
-%  ODE SETTINGS FOR   P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+%  SIM PARAMS FOR     P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
 % ***********************************************************************************
 
     % ODE tolerance 
-    ODE_TOL = 1e-08;
+    ODE_Tol = 1e-08;
+    % Number of beats to steady state and to calc resdiual/plot
+    NumBeats_SS = 20;                               % Num beats to steady state
+    NumBeats_ResPlot = 3;                           % Num beats to residual/plot
+    T_RHCRest = 60 / HR_RHCRest;                    % Cardiac cycle period (s)
+    TSpan_SS = [0 NumBeats_SS * T_RHCRest];         % Simulation time span to SS
+
+    SimParam_Values = {ODE_Tol NumBeats_SS ...
+        NumBeats_ResPlot T_RHCRest TSpan_SS};
+    SimParam_Fields = {'CODE_Tol' 'NumBeats_SS' ...
+        'NumBeats_ResPlot' 'TRHCRest' 'TSpan_SS'};
+    SimParam_Struct = cell2struct(SimParam_Values, ...
+        SimParam_Fields,2);
+
+    % Create one single structure of structures to pass
+    AllStruct_Values = {InputData_Struct ModParam_Struct ...
+        SimParam_Struct};
+    AllStruct_Fields = {'InputData_Struct' 'Param_Struct' ...
+        'SimParamStruct'};
+    AllStruct_Struct = cell2struct(AllStruct_Values, ...
+        AllStruct_Fields,2);
 
 
 %% **********************************************************************************
 %  COMPUTED VALS FOR  P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
 % ***********************************************************************************
 
-    T_RHCRest = 60 / HR_RHCRest;                    % T
-    SV_RHC_Rest = LV_EDD_EchoRest - ...             % Do we need this?, SV
-        LV_ESD_EchoRest; 
-    
     % Calculate total blood volume based on height, weight and sex.
     %  This expression is from Nadler et al. Surgery 51:224,1962.
     if (Sex == 'M')
@@ -171,27 +180,13 @@ tic
     %  disease the 30% circulating blood volume can be altered by changing SVFact
     StressBV = SVFact * 0.30 * TotBV;
     
-    % Calculate number of beats/time span
-
-    
-    
     % Times (s) and other holdovers from data struct
     dt = 1e-03;
-    tspan = [0:dt:20];  
-    T     = 60 / HR_RHCRest; 
-    SPbar = 120;
-    DPbar = 80;
-%     Vtot = 5000;
-    CO_lv = (CO_RHCRest * 1000) / 60;               % mL/s
-    SV    = CO_lv*T; 
-    EDV_LV = 125;
-    ESV_LV = EDV_LV - SV;
-
-%     % Unstressed volumes (mL) 
-%     V_SAu = 525;
-%     V_SVu = 2475; 
-%     V_PAu = 100; 
-%     V_PVu = 900;
+    % Unstressed volumes (mL) 
+    V_SAu = 525;
+    V_SVu = 2475; 
+    V_PAu = 100; 
+    V_PVu = 900;
 
 
 %% **********************************************************************************
@@ -226,142 +221,23 @@ tic
 
     %% Set mass matrix M for DAE 
 
-    M = speye(length(init));
+    M = speye(length(X0));
     M(1,1) = 0;
     M(2,2) = 0;
     M(3,3) = 0;
     M(4,4) = 0; 
 
     %% Solve model 
-    % Use a while loop to allow model to converge to steady-state 
-    
-    ndone = 0; 
-    while ndone == 0 
-        
-        % Set options and compute model for time span tspan 
-        opts = odeset('Mass',M,'RelTol',ODE_TOL,'AbsTol',ODE_TOL);
-        sol  = ode15s(@PKU_CV_dXdt,tspan,X0,opts,AllStruct_Struct);
-       
-    
-        if sol.x(end) ~= tspan(end) 
-            % Check to see if the model solved to the end of tspan. If not,
-            % set the initial conditions for the next loop at the start of 
-            % the previous beat and solve for 10 more beats 
 
-            t = sol.x(1):dt:sol.x(end); 
-            beats = mod(t,T); 
-            x = find(round(beats,3) == 0);
-            y = find(t(x) <= t(end)); 
-            tspan = tspan(1):dt:tspan(x(y(end)));
-        
-            sols = deval(sol,tspan);
-           
-            if round(x(y(end-1))) == 1 
-                % If model stopped after one cardiac cycle, reset initial
-                % conditions to the beginning of the second cardiac cycle.
-                init  = sols(:,x(y(end))); 
-                tspan = tspan(x(y(end))):dt:tspan(x(y(end))) + 10*T;
-            else 
-                % If the model stopped after more than one cardiac cycle, 
-                % reset the initial conditions to the previous fully 
-                % computed cardiac cycle. 
-                init  = sols(:,x(y(end-1))); 
-                tspan = tspan(x(y(end-1))):dt:tspan(x(y(end-1))) + 10*T;
-            end 
-             
-        else 
-            % If the model has successfully solved at least 10 beats, then we can
-            % assess whether the model has reached steady state 
-            
-            % Extract sarcomere lengths and systemic arterial pressure (P_SA)     
-            sols = deval(sol,tspan);
-                
-            Lsc_LV  = sols(5,:);
-            Lsc_SEP = sols(6,:); 
-            Lsc_RV  = sols(7,:); 
-            P_SA    = sols(10,:) / C_SA; 
-            
-
-            
-            % Find the last 5 beats of the simulation 
-            xx = find(tspan >= tspan(end) - 5*T); 
-            
-            % Set a peak threshold as half of the amplitude of the last 5 beats 
-            threshold_LV  = (max(Lsc_LV(xx))  - min(Lsc_LV(xx)))/2;
-            threshold_SEP = (max(Lsc_SEP(xx)) - min(Lsc_SEP(xx)))/2;
-            threshold_RV  = (max(Lsc_RV(xx))  - min(Lsc_RV(xx)))/2;
-            
-            % Determine the length of half of the cardiac cycle 
-            half_per = round((T/2)/dt); 
-            
-            % Find peaks for the last 5 beats with conditions that the
-            % amplitude must be at least half of the amplitude of the last
-            % 5 peats and the minimum distance between peaks must be at
-            % least half of the cardiac cycle apart 
-            [pks_Lsc_LV, loc_pks_Lsc_LV]  = findpeaks(...
-                Lsc_LV,'MinPeakDistance',half_per,'MinPeakProminence',threshold_LV); 
-            [pks_Lsc_SEP,loc_pks_Lsc_SEP] = findpeaks(...
-                Lsc_SEP,'MinPeakDistance',half_per,'MinPeakProminence',threshold_SEP); 
-            [pks_Lsc_RV, loc_pks_Lsc_RV]  = findpeaks(...
-                Lsc_RV,'MinPeakDistance',half_per,'MinPeakProminence',threshold_RV); 
-            [pks_P_SA,   loc_pks_P_SA]    = findpeaks(...
-                P_SA,'MinPeakDistance',half_per); 
-            
-            % Exclude the last peak, so there are 4 peaks (This is
-            % important in case something unexpected happens at the end of
-            % the signal) 
-            pks_Lsc_LV  = pks_Lsc_LV(end-5:end-1); 
-            pks_Lsc_SEP = pks_Lsc_SEP(end-5:end-1); 
-            pks_Lsc_RV  = pks_Lsc_RV(end-5:end-1);
-            pks_P_SA    = pks_P_SA(end-5:end-1); 
-            
-            % Find the locations of the peaks 
-            loc_pks_Lsc_LV  = loc_pks_Lsc_LV(end-5:end-1); 
-            loc_pks_Lsc_SEP = loc_pks_Lsc_SEP(end-5:end-1); 
-            loc_pks_Lsc_RV  = loc_pks_Lsc_RV(end-5:end-1); 
-            loc_pks_P_SA    = loc_pks_P_SA(end-5:end-1); 
-            
-            % Find the times where the peaks occur 
-            t_pks_Lsc_LV  = tspan(loc_pks_Lsc_LV);
-            t_pks_Lsc_SEP = tspan(loc_pks_Lsc_SEP);
-            t_pks_Lsc_RV  = tspan(loc_pks_Lsc_RV);
-            t_pks_P_SA    = tspan(loc_pks_P_SA); 
-            
-            % Create a linear regression through the peaks 
-            pf_Lsc_LV  = polyfit(t_pks_Lsc_LV,pks_Lsc_LV,1); 
-            pf_Lsc_SEP = polyfit(t_pks_Lsc_SEP,pks_Lsc_SEP,1); 
-            pf_Lsc_RV  = polyfit(t_pks_Lsc_RV,pks_Lsc_RV,1); 
-            pf_P_SA    = polyfit(t_pks_P_SA,pks_P_SA,1); 
-            
-            % Extract the slope of the regression line 
-            slope_Lsc_LV  = pf_Lsc_LV(1);
-            slope_Lsc_SEP = pf_Lsc_SEP(1);
-            slope_Lsc_RV  = pf_Lsc_RV(1);
-            slope_P_SA    = pf_P_SA(1);
-            
-            
-            % If the slope is sufficiently small (i.e. the line is 
-            % practically horizontal), we have reached steady state 
-            slope_lim = 1e-3;
-                % Stopping criteria 
-                if abs(slope_P_SA) < slope_lim && abs(slope_Lsc_LV) < slope_lim && ...
-                        abs(slope_Lsc_SEP) < slope_lim && abs(slope_Lsc_RV) < slope_lim
-                    ndone = 1; 
-                end 
-                
-            % If we have not reached steady-state, solve the model for 10 more
-            % beats and reassess convergence 
-            beats = mod(tspan,T); 
-            x = find(round(beats,3) == 0);
-            y = find(tspan(x) <= tspan(end));
-            tspan = tspan(x(y(end-1))):dt:tspan(x(y(end-1))) + 10*T;
-            init  = sols(:,x(y(end-1))); 
-        end 
-    end
+    % Set options and compute model for time span tspan 
+    opts = odeset('Mass',M,'RelTol',ODE_Tol,'AbsTol',ODE_Tol);
+    sol  = ode15s(@PKU_CV_dXdt,TSpan_SS,X0,opts,AllStruct_Struct);
     
-    % After determining that the model is in steady-state, solve 2 more beats 
-    time = 0:dt:2*T; 
-    sol  = ode15s(@PKU_CV_dXdt,[time(1) time(end)],init,opts,AllStruct_Struct);
+    % After running model to steady-state, 
+    %  solve for NumBeats_ResPlot more beats 
+    X0  = sol.y(:,end); 
+    time = 0:dt:NumBeats_ResPlot*T; 
+    sol  = ode15s(@PKU_CV_dXdt,[time(1) time(end)],X0,opts,AllStruct_Struct);
     sols = deval(sol,time);
     sols = sols'; 
     
