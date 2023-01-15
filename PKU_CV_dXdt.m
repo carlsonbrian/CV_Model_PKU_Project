@@ -33,53 +33,50 @@
 % ***********************************************************************************
 
     InputData_Struct = AllStruct_Struct.InputData_Struct;
-    Param_Struct = AllStruct_Struct.Param_Struct;
+    ModParam_Struct = AllStruct_Struct.ModParam_Struct;
+    CompVals_Struct = AllStruct_Struct.CompVals_Struct;
 
 %% **********************************************************************************
 %  UNPACK PARAMS FOR          C V   S Y S T E M S   M O D E L   W / T R I S E G
 % ***********************************************************************************
 
     % Compliances (mL mmHg^(-1))
-    C_SA = Param_Struct.C_SA;                       % Systemic arterial compliance
-    C_SV = Param_Struct.C_SV;                       % Systemic venous compliance
-    C_PA = Param_Struct.C_PA;                       % Pulmonary arterial compliance
-    C_PV = Param_Struct.C_PV;                       % Pulmonary venous compliance
+    C_SA = ModParam_Struct.C_SA;                    % Systemic arterial compliance
+    C_SV = ModParam_Struct.C_SV;                    % Systemic venous compliance
+    C_PA = ModParam_Struct.C_PA;                    % Pulmonary arterial compliance
+    C_PV = ModParam_Struct.C_PV;                    % Pulmonary venous compliance
     % Resistances (mmHg s mL^(-1))
-    R_SA  = Param_Struct.R_SA;                      % Systemic arterial resistance
-    R_tSA = Param_Struct.R_tSA;                     % Trnsmrl syst art resistance
-    R_PA  = Param_Struct.R_PA;                      % Pulmonary arterial resistance
-    R_tPA = Param_Struct.R_tPA;                     % Trnsmrl pulm art resistance
-    R_m = Param_Struct.R_m;                         % Mitral valve resistance
-    R_a = Param_Struct.R_a;                         % Aortic valve resistance
-    R_t = Param_Struct.R_t;                         % Tricuspid valve resistance
-    R_p = Param_Struct.R_p;                         % Pulmonary valve resistance 
+    R_SA  = ModParam_Struct.R_SA;                   % Systemic arterial resistance
+    R_tSA = ModParam_Struct.R_tSA;                  % Trnsmrl syst art resistance
+    R_PA  = ModParam_Struct.R_PA;                   % Pulmonary arterial resistance
+    R_tPA = ModParam_Struct.R_tPA;                  % Trnsmrl pulm art resistance
+    R_m = ModParam_Struct.R_m;                      % Mitral valve resistance
+    R_a = ModParam_Struct.R_a;                      % Aortic valve resistance
+    R_t = ModParam_Struct.R_t;                      % Tricuspid valve resistance
+    R_p = ModParam_Struct.R_p;                      % Pulmonary valve resistance 
     % Pericardium parameters 
-    Vh0 = Param_Struct.Vh0;                         % Pericrdl zero press vol (mL) 
-    s   = Param_Struct.s;                           % Pericrdl stiffness coeff (uls)        
+    Vh0 = ModParam_Struct.Vh0;                      % Pericrdl zero press vol (mL) 
+    s   = ModParam_Struct.s;                        % Pericrdl stiffness coeff (uls)        
     % Force scaling factors (unitless) 
-    k_pas_LV = Param_Struct.k_pas_LV;               % Scale fact passive LV force
-    k_pas_RV = Param_Struct.k_pas_RV;               % Scale fact passive RV force
-    k_act_LV = Param_Struct.k_act_LV;               % Scale fact active LV force
-    k_act_RV = Param_Struct.k_act_RV;               % Scale fact active RV force
+    k_pas_LV = ModParam_Struct.k_pas_LV;            % Scale fact passive LV force
+    k_pas_RV = ModParam_Struct.k_pas_RV;            % Scale fact passive RV force
+    k_act_LV = ModParam_Struct.k_act_LV;            % Scale fact active LV force
+    k_act_RV = ModParam_Struct.k_act_RV;            % Scale fact active RV force
     % Sarcomere length parameters (um)
-    Lsref   = Param_Struct.Lsref;
-    Lsc0    = Param_Struct.Lsc0; 
-    Lse_iso = Param_Struct.Lse_iso; 
+    Lsref   = ModParam_Struct.Lsref;
+    Lsc0    = ModParam_Struct.Lsc0; 
+    Lse_iso = ModParam_Struct.Lse_iso; 
     % Sarcomere length shortening velocity (um s^(-1))
-    v_max = Param_Struct.v_max; 
+    v_max = ModParam_Struct.v_max; 
     % Midwall reference surface areas (cm^2)
-    Amref_LV  = Param_Struct.Amref_LV;              % Midwall reference SA for LV
-    Amref_SEP = Param_Struct.Amref_SEP;             % Midwall reference SA for sept
-    Amref_RV  = Param_Struct.Amref_RV;              % Midwall reference SA for RV
-    % Midwall volumes (mL)
-    Vw_LV  = Param_Struct.Vw_LV;                    % Midwall enclsd volume for LV
-    Vw_SEP = Param_Struct.Vw_SEP;                   % Midwall enclsd volume for sept
-    Vw_RV  = Param_Struct.Vw_RV;                    % Midwall enclsd volume for RV
+    Amref_LV  = ModParam_Struct.Amref_LV;           % Midwall reference SA for LV
+    Amref_SEP = ModParam_Struct.Amref_SEP;          % Midwall reference SA for sept
+    Amref_RV  = ModParam_Struct.Amref_RV;           % Midwall reference SA for RV
     % Passive stress steepness parameter (dimensionless) 
-    gamma = Param_Struct.gamma; 
+    gamma = ModParam_Struct.gamma; 
     % Percentage of cardiac cycle (uls)
-    k_TS = Param_Struct.k_TS;                       % Frac T to max systole (uls)
-    k_TR = Param_Struct.k_TR;                       % Frac T max syst to basln (uls)
+    k_TS = ModParam_Struct.k_TS;                    % Frac T to max systole (uls)
+    k_TR = ModParam_Struct.k_TR;                    % Frac T max syst to basln (uls)
 
 
 %% **********************************************************************************
@@ -87,6 +84,11 @@
 % ***********************************************************************************
 
     HR = InputData_Struct.HR_RHCRest; 
+
+    % Computed wall volumes (mL)
+    Vw_LV  = CompVals_Struct.Vw_LV;                 % Wall tissue volume for LV
+    Vw_SEP = CompVals_Struct.Vw_SEP;                % Wall tissue volume for sept
+    Vw_RV  = CompVals_Struct.Vw_RV;                 % Wall tissue volume for RV
 
 %% **********************************************************************************
 %  UNPACK VARS FOR            C V   S Y S T E M S   M O D E L   W / T R I S E G

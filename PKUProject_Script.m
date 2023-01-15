@@ -6,13 +6,15 @@
 %   systems model which can be hand tuned to match the data
 %
 %   Model originally created on     10 January 2023
-%   Model last modfied on           10 January 2023
+%   Model last modfied on           12 January 2023
 %
 %   Based on the code by   Ben Randall
 %                          Salla Kim
 %                          Andrew Meyer
 %                          Dan Beard
+%
 %   Heart model from       Joost Lumens et al.
+%
 %   Implemented by         Brian Carlson
 %                          Physiological Systems Dynamics Laboratory
 %                          Department of Molecular and Integrative Physiology
@@ -37,32 +39,25 @@ tic
     % Right heart cath data
     HR_RHCRest = 54;                                % Heart rate rest RHC (beats/min)
     CO_RHCRest = 6.7;                               % Cardiac output rest RHC (L/min)
-    P_SAdiast_RHCRest = 80;                         % Not given, SPbar (mmHg)
-    P_SAsyst_RHCRest = 120;                         % Not given, DPbar (mmHg)
+    P_SAdiast_RHCRest = 80;                         % Systmc diast press (mmHg) NG
+    P_SAsyst_RHCRest = 120;                         % Systmc syst press (mmHg) NG
     % Transthoracic echo data
-    LV_EDD_EchoRest = 48.2;                         % Use Teich Eqn, EDV_LV (mm)
-    LV_ESD_EchoRest = 28.3;                         % Use Teich Eqn, ESV_LV (mm)
-    V_LVdiast_EchoRest = -1;                        % Not given, MOD LV V diast (mL)
-    V_LVsyst_EchoRest = -1;                         % Not given, MOD LV V syst (mL)
-    % If the LV volume is not calculated with 2D Simpson's method
-    %  then use Teichholz formula with the 1D top of the ventricle
-    %  diameter to estimate LV volume in systole and diastole
-    if (V_LVsyst_EchoRest == -1)
-        % Calculate the LV systolic volume using the Teichholz expression
-        V_LVsyst_EchoRest = ((LV_EDD_EchoRest/10)^3) / ...       
-            ((6/pi) * ((0.075 * (LV_EDD_EchoRest/10)) + 0.18));
-        V_LVdiast_EchoRest = ((LV_ESD_EchoRest/10)^3) / ...       
-            ((6/pi) * ((0.075 * (LV_ESD_EchoRest/10)) + 0.18));
-    end
+    LV_EDD_EchoRest = 48.2;                         % LV diastolic diameter (mm)
+    LV_ESD_EchoRest = 28.3;                         % LV systolic diameter (mm)
+    V_LVdiast_EchoRest = -1;                        % MOD LV V diast (mL) NG
+    V_LVsyst_EchoRest = -1;                         % MOD LV V syst (mL) NG
+    IVSt_EchoRest = -1;                             % Sept thcknss diast (mm) NG
+    LVPWt_EchoRest = -1;                            % Pstwl LV thcknss diast (mm) NG
+    RVIDbase_EchoRest = -1;                         % RV basal ID diast (mm) NG
+    RVL_EchoRest = -1;                              % RV length to apex (mm) NG
+    RVt_EchoRest = -1;                              % RV wall thickness (mm) NG
 
     % Create input data structure to pass to functions
     InputData_Values = {DataSrc PID Hgt Wgt Sex HR_RHCRest ...
-        CO_RHCRest P_SAdiast_RHCRest P_SAsyst_RHCRest ...
-        V_LVdiast_EchoRest V_LVsyst_EchoRest};
+        CO_RHCRest P_SAdiast_RHCRest P_SAsyst_RHCRest};
     InputData_Fields = {'DataSrc' 'PID' 'Hgt' 'Wgt' 'Sex' ...
         'HR_RHCRest' 'CO_RHCRest' 'P_SAdiast_RHCRest' ...
-        'P_SAsyst_RHCRest' 'V_LVdiast_EchoRest' ...
-        'V_LVsyst_EchoRest'};
+        'P_SAsyst_RHCRest'};
     InputData_Struct = cell2struct(InputData_Values, ...
         InputData_Fields,2);
 
@@ -103,10 +98,6 @@ tic
     Amref_LV  = 102.7282;                           % Midwall reference SA for LV
     Amref_SEP = 51.3641; 
     Amref_RV  = 143.2044; 
-    % Midwall volume (mL)
-    Vw_LV  = 82.54; 
-    Vw_SEP = 41.27; 
-    Vw_RV  = 25.7725; 
     % Passive stress steepness parameter (uls) 
     gamma = 7.5; 
     % Activation function parameters
@@ -120,43 +111,16 @@ tic
     ModParam_Values = {C_SA C_SV C_PA C_PV R_SA  R_tSA ...
         R_PA R_tPA R_m R_a R_t R_p Vh0 s k_pas_LV ...
         k_pas_RV k_act_LV k_act_RV Lsref Lsc0 Lse_iso ...
-        v_max Amref_LV  Amref_SEP Amref_RV Vw_LV ...
-        Vw_SEP Vw_RV gamma k_TS k_TR SVFact};
+        v_max Amref_LV  Amref_SEP Amref_RV gamma ...
+        k_TS k_TR SVFact};
     ModParam_Fields = {'C_SA' 'C_SV' 'C_PA' 'C_PV' ...
         'R_SA'  'R_tSA' 'R_PA' 'R_tPA' 'R_m' 'R_a' ...
         'R_t' 'R_p' 'Vh0' 's' 'k_pas_LV' 'k_pas_RV' ...
         'k_act_LV' 'k_act_RV' 'Lsref' 'Lsc0' 'Lse_iso' ...
-        'v_max' 'Amref_LV' 'Amref_SEP' 'Amref_RV' 'Vw_LV' ...
-        'Vw_SEP' 'Vw_RV' 'gamma' 'k_TS' 'k_TR' 'SVFact'};
+        'v_max' 'Amref_LV' 'Amref_SEP' 'Amref_RV' ...
+        'gamma' 'k_TS' 'k_TR' 'SVFact'};
     ModParam_Struct = cell2struct(ModParam_Values, ...
         ModParam_Fields,2);
-
-%% **********************************************************************************
-%  SIM PARAMS FOR     P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
-% ***********************************************************************************
-
-    % ODE tolerance 
-    ODE_Tol = 1e-08;
-    % Number of beats to steady state and to calc resdiual/plot
-    NumBeats_SS = 20;                               % Num beats to steady state
-    NumBeats_ResPlot = 3;                           % Num beats to residual/plot
-    T_RHCRest = 60 / HR_RHCRest;                    % Cardiac cycle period (s)
-    TSpan_SS = [0 NumBeats_SS * T_RHCRest];         % Simulation time span to SS
-
-    SimParam_Values = {ODE_Tol NumBeats_SS ...
-        NumBeats_ResPlot T_RHCRest TSpan_SS};
-    SimParam_Fields = {'CODE_Tol' 'NumBeats_SS' ...
-        'NumBeats_ResPlot' 'TRHCRest' 'TSpan_SS'};
-    SimParam_Struct = cell2struct(SimParam_Values, ...
-        SimParam_Fields,2);
-
-    % Create one single structure of structures to pass
-    AllStruct_Values = {InputData_Struct ModParam_Struct ...
-        SimParam_Struct};
-    AllStruct_Fields = {'InputData_Struct' 'Param_Struct' ...
-        'SimParamStruct'};
-    AllStruct_Struct = cell2struct(AllStruct_Values, ...
-        AllStruct_Fields,2);
 
 
 %% **********************************************************************************
@@ -179,6 +143,82 @@ tic
     %  circulating blood volume. To account for extra recruited volume in heart
     %  disease the 30% circulating blood volume can be altered by changing SVFact
     StressBV = SVFact * 0.30 * TotBV;
+
+    % If the LV volume is not calculated with 2D Simpson's method
+    %  then use Teichholz formula with the 1D top of the ventricle
+    %  diameter to estimate LV volume in systole and diastole
+    if (V_LVsyst_EchoRest == -1)
+        % Calculate the LV systolic volume using the Teichholz expression
+        V_LVsyst_EchoRest = ((LV_EDD_EchoRest/10)^3) / ...       
+            ((6/pi) * ((0.075 * (LV_EDD_EchoRest/10)) + 0.18));
+        V_LVdiast_EchoRest = ((LV_ESD_EchoRest/10)^3) / ...       
+            ((6/pi) * ((0.075 * (LV_ESD_EchoRest/10)) + 0.18));
+    end
+
+    % Calculate the LV total wall volume including both LV free
+    %  wall and septal wall. These relationships is from Devereaux et al.
+    %  Am J Cardiol 57:450-458, 1986. Note this equation for the LV and 
+    %  SW mass is for lengths in cm and yields a volume in mL.
+    if (IVSt_EchoRest ~= -1)
+        Vw_LVFWSW = (0.8 * 1.04 * ((IVSt_EchoRest/10 + ...
+            LV_EDD_EchoRest/10 + LVPWt_EchoRest/10)^3 - ...
+            (LV_EDD_EchoRest/10)^3) + 0.6) / 1.055;
+        Vw_LV = 2/3 * Vw_LVFWSW;                
+        Vw_SEP = 1/3 * Vw_LVFWSW;
+    else
+        Vw_LV  = 82.54;                     
+        Vw_SEP = 41.27; 
+    end
+    
+    % Calculate the wall volume of the right ventricular free wall using the
+    % expressions from Kochav et al. J Am Soc Echocard 34:839-850, 2021
+    if (RVIDbase_EchoRest ~= -1)
+        RVSurfA = (((RVIDbase_EchoRest * LV_EDD_EchoRest)^1.6 + ...
+            (RVIDbase_EchoRest * RVL_EchoRest)^1.6 + ...
+            (LV_EDD_EchoRest * RVL_EchoRest)^1.6) / 3)^(1/1.6);
+        Vw_RV = RVSurfA * RVt_EchoRest;
+    else
+        Vw_RV  = 25.7725; 
+    end
+
+    % Create computed values data structure to pass to functions
+    CompVals_Values = {TotBV StressBV Vw_LV Vw_SEP Vw_RV};
+    CompVals_Fields = {'TotBV' 'StressBV' 'Vw_LV' 'Vw_SEP' 'Vw_RV'};
+    CompVals_Struct = cell2struct(CompVals_Values, ...
+        CompVals_Fields,2);
+
+
+%% **********************************************************************************
+%  SIM PARAMS FOR     P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
+
+    % ODE tolerance 
+    ODE_Tol = 1e-08;
+    % Number of beats to steady state and to calc resdiual/plot
+    NumBeats_SS = 20;                               % Num beats to steady state
+    NumBeats_ResPlot = 3;                           % Num beats to residual/plot
+    T_RHCRest = 60 / HR_RHCRest;                    % Cardiac cycle period (s)
+    TSpan_SS = [0 NumBeats_SS * T_RHCRest];         % Simulation time span to SS
+
+    SimParam_Values = {ODE_Tol NumBeats_SS ...
+        NumBeats_ResPlot T_RHCRest TSpan_SS};
+    SimParam_Fields = {'CODE_Tol' 'NumBeats_SS' ...
+        'NumBeats_ResPlot' 'TRHCRest' 'TSpan_SS'};
+    SimParam_Struct = cell2struct(SimParam_Values, ...
+        SimParam_Fields,2);
+
+    % Create one single structure of structures to pass
+    AllStruct_Values = {InputData_Struct ModParam_Struct ...
+        CompVals_Struct SimParam_Struct};
+    AllStruct_Fields = {'InputData_Struct' 'ModParam_Struct' ...
+        'CompVals_Struct' 'SimParamStruct'};
+    AllStruct_Struct = cell2struct(AllStruct_Values, ...
+        AllStruct_Fields,2);
+
+
+%% **********************************************************************************
+%  MORE VALS FOR  P K U / U M I C H   H F p E F   P R O J E C T   S C R I P T
+% ***********************************************************************************
     
     % Times (s) and other holdovers from data struct
     dt = 1e-03;
@@ -236,7 +276,7 @@ tic
     % After running model to steady-state, 
     %  solve for NumBeats_ResPlot more beats 
     X0  = sol.y(:,end); 
-    time = 0:dt:NumBeats_ResPlot*T; 
+    time = 0:dt:NumBeats_ResPlot*T_RHCRest; 
     sol  = ode15s(@PKU_CV_dXdt,[time(1) time(end)],X0,opts,AllStruct_Struct);
     sols = deval(sol,time);
     sols = sols'; 
@@ -354,13 +394,13 @@ tic
     hfig2 = figure(2);  
     clf
     hold on 
-    plot([time(1) time(end)],SPbar * ones(2,1),'k:','linewidth',0.5)
-    plot([time(1) time(end)],DPbar * ones(2,1),'k:','linewidth',0.5)
+    plot([time(1) time(end)],P_SAsyst_RHCRest * ones(2,1),'k:','linewidth',0.5)
+    plot([time(1) time(end)],P_SAdiast_RHCRest * ones(2,1),'k:','linewidth',0.5)
     h1 = plot(time,P_SA, 'color', purple, 'linewidth',2); 
     xlabel('Time (s)')
     ylabel('Pressure (mmHg)','linewidth',2)
     legend([h1],'P_{SA}')
-    ylim([round(DPbar)-20 round(SPbar)+20])
+    ylim([round(P_SAdiast_RHCRest)-20 round(P_SAsyst_RHCRest)+20])
     set(gca,'FontSize',20)
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -368,8 +408,8 @@ tic
     hfig3 = figure(3);
     clf 
     hold on
-    yline(SPbar,':')
-    yline(DPbar,':')
+    yline(P_SAsyst_RHCRest,':')
+    yline(P_SAdiast_RHCRest,':')
     h1 = plot(time,P_LV,'r','linewidth',2);
     h2 = plot(time,P_SA,'color',purple,'linewidth',2);
     legend([h1 h2],'P_{LV}','P_{SA}','orientation','horizontal')
@@ -402,8 +442,8 @@ tic
     hfig5 = figure(5); 
     clf
     hold on 
-    yline(EDV_LV,':')
-    yline(ESV_LV,':')
+    yline(V_LVdiast_EchoRest,':')
+    yline(V_LVsyst_EchoRest,':')
     h1 = plot(time,V_LV,'r','linewidth',2);
     h2 = plot(time,V_RV,'b','linewidth',2);
     legend([h1, h2],'LV','RV','orientation','horizontal')
@@ -456,9 +496,9 @@ tic
     clf
     hold on 
     xline(ES,':')
-    xline(ES+T,':')
+    xline(ES+T_RHCRest,':')
     xline(ED,'--')
-    xline(ED+T,'--')
+    xline(ED+T_RHCRest,'--')
     plot(time,Y,'k','linewidth',3)
     set(gca,'FontSize',20)
     xlabel('Time (s)')
@@ -471,9 +511,9 @@ tic
     clf
     hold on
     xline(ES,':')
-    xline(ES+T,':')
+    xline(ES+T_RHCRest,':')
     xline(ED,'--')
-    xline(ED+T,'--')
+    xline(ED+T_RHCRest,'--')
     plot(time,Cm_SEP,'k','linewidth',2) 
     ylabel('Septal Curvature (cm^{-1})')
     xlabel('Time (s)')
